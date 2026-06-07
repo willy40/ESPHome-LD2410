@@ -4,11 +4,9 @@ from esphome.components import uart, sensor, binary_sensor, number
 from esphome.const import (
     CONF_ID,
     DEVICE_CLASS_DISTANCE,
-    DEVICE_CLASS_MOTION,
     DEVICE_CLASS_OCCUPANCY,
     STATE_CLASS_MEASUREMENT,
     UNIT_CENTIMETER,
-    ICON_MOTION_SENSOR,
     ICON_RULER,
 )
 
@@ -16,37 +14,20 @@ DEPENDENCIES = ["uart"]
 AUTO_LOAD = ["sensor", "binary_sensor", "number"]
 CODEOWNERS = ["@willy40"]
 
-CONF_HAS_TARGET        = "has_target"
-CONF_LAST_CMD_OK       = "last_command_success"
-CONF_DISTANCE          = "distance"
-CONF_MAX_GATE          = "max_distance_gate"
-CONF_MIN_GATE          = "min_distance_gate"
-CONF_NONE_DURATION     = "none_duration"
+CONF_HAS_TARGET    = "has_target"
+CONF_LAST_CMD_OK   = "last_command_success"
+CONF_DISTANCE      = "distance"
+CONF_MAX_GATE      = "max_distance_gate"
+CONF_MIN_GATE      = "min_distance_gate"
+CONF_NONE_DURATION = "none_duration"
 
 ld2410s_ns = cg.esphome_ns.namespace("ld2410s")
 LD2410SComponent = ld2410s_ns.class_(
     "LD2410SComponent", cg.PollingComponent, uart.UARTDevice
 )
 
-# ---- sub-schemas ----
-
-BINARY_SENSOR_SCHEMA = binary_sensor.binary_sensor_schema()
-
-SENSOR_SCHEMA = sensor.sensor_schema(
-    unit_of_measurement=UNIT_CENTIMETER,
-    accuracy_decimals=0,
-    state_class=STATE_CLASS_MEASUREMENT,
-    device_class=DEVICE_CLASS_DISTANCE,
-    icon=ICON_RULER,
-)
-
-def gate_number_schema(name, min_val, max_val):
-    return number.number_schema(ld2410s_ns.class_("LD2410SComponent")).extend(
-        cv.Schema({
-            cv.Optional("min_value", default=min_val): cv.int_,
-            cv.Optional("max_value", default=max_val): cv.int_,
-        })
-    )
+# number.number_schema() is the public API (NUMBER_SCHEMA is private since ESPHome 2023.x)
+NUMBER_SCHEMA = number.number_schema(ld2410s_ns.class_("LD2410SComponent"))
 
 CONFIG_SCHEMA = (
     cv.Schema(
@@ -56,28 +37,16 @@ CONFIG_SCHEMA = (
                 device_class=DEVICE_CLASS_OCCUPANCY,
             ),
             cv.Optional(CONF_LAST_CMD_OK): binary_sensor.binary_sensor_schema(),
-            cv.Optional(CONF_DISTANCE): SENSOR_SCHEMA,
-            cv.Optional(CONF_MAX_GATE): number.NUMBER_SCHEMA.extend(
-                {
-                    cv.GenerateID(): cv.declare_id(
-                        cg.esphome_ns.class_("number::Number")
-                    ),
-                }
+            cv.Optional(CONF_DISTANCE): sensor.sensor_schema(
+                unit_of_measurement=UNIT_CENTIMETER,
+                accuracy_decimals=0,
+                state_class=STATE_CLASS_MEASUREMENT,
+                device_class=DEVICE_CLASS_DISTANCE,
+                icon=ICON_RULER,
             ),
-            cv.Optional(CONF_MIN_GATE): number.NUMBER_SCHEMA.extend(
-                {
-                    cv.GenerateID(): cv.declare_id(
-                        cg.esphome_ns.class_("number::Number")
-                    ),
-                }
-            ),
-            cv.Optional(CONF_NONE_DURATION): number.NUMBER_SCHEMA.extend(
-                {
-                    cv.GenerateID(): cv.declare_id(
-                        cg.esphome_ns.class_("number::Number")
-                    ),
-                }
-            ),
+            cv.Optional(CONF_MAX_GATE):    NUMBER_SCHEMA,
+            cv.Optional(CONF_MIN_GATE):    NUMBER_SCHEMA,
+            cv.Optional(CONF_NONE_DURATION): NUMBER_SCHEMA,
         }
     )
     .extend(cv.polling_component_schema("15s"))
