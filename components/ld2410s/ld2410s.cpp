@@ -7,7 +7,7 @@ namespace ld2410s {
 static const char *const TAG = "ld2410s";
 
 // ---------------------------------------------------------------------------
-// LD2410SNumber::control  — called by ESPHome when user changes value in HA
+// LD2410SNumber::control
 // ---------------------------------------------------------------------------
 void LD2410SNumber::control(float value) {
   this->publish_state(value);
@@ -28,20 +28,43 @@ void LD2410SNumber::control(float value) {
 // LD2410SComponent — lifecycle
 // ---------------------------------------------------------------------------
 void LD2410SComponent::setup() {
-  this->set_update_interval(15000);
   ESP_LOGCONFIG(TAG, "LD2410S setup done");
 }
 
 void LD2410SComponent::loop() {
   while (this->available())
     this->readline_(this->read());
+
+  // OFF debounce: if no detection for off_delay_ms, publish OFF
+  if (this->target_state_ && this->has_target_ != nullptr) {
+    if (millis() - this->last_detection_ms_ > this->off_delay_ms_) {
+      this->target_state_ = false;
+      this->has_target_->publish_state(false);
+    }
+  }
 }
 
 void LD2410SComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "HLK-LD2410S:");
-  LOG_BINARY_SENSOR("  ", "Has Target",     this->has_target_);
-  LOG_BINARY_SENSOR("  ", "Last Cmd OK",    this->last_cmd_ok_);
-  LOG_SENSOR("  ",        "Distance",       this->distance_);
+  ESP_LOGCONFIG(TAG, "  Off delay: %u ms", this->off_delay_ms_);
+  LOG_BINARY_SENSOR("  ", "Has Target",  this->has_target_);
+  LOG_BINARY_SENSOR("  ", "Last Cmd OK", this->last_cmd_ok_);
+  LOG_SENSOR("  ",        "Distance",    this->distance_);
+}
+
+// ---------------------------------------------------------------------------
+// Presence publisher with debounce
+// ---------------------------------------------------------------------------
+void LD2410SComponent::publish_presence_(bool detected) {
+  if (detected) {
+    this->last_detection_ms_ = millis();
+    if (!this->target_state_) {
+      this->target_state_ = true;
+      if (this->has_target_ != nullptr)
+        this->has_target_->publish_state(true);
+    }
+  }
+  // OFF is handled by the loop() timeout — never publish OFF here directly
 }
 
 // ---------------------------------------------------------------------------
@@ -58,7 +81,6 @@ void LD2410SComponent::send_command_(uint8_t cmd_lo, uint8_t cmd_hi,
   uint16_t len = 2 + (uint16_t) value_len;
   this->write_byte(lowByte(len));
   this->write_byte(highByte(len));
-
   this->write_byte(cmd_lo);
   this->write_byte(cmd_hi);
 
@@ -85,26 +107,23 @@ void LD2410SComponent::readline_(int readch) {
 
   int pos = this->rx_pos_;
 
-  // minimal frame: 6E <state> <dist_lo> <dist_hi> 62
   if (pos == 5 && this->rx_buf_[0] == 0x6E && this->rx_buf_[4] == 0x62) {
     this->handle_minimal_frame_(this->rx_buf_, pos);
     this->rx_pos_ = 0;
     return;
   }
 
-  // ACK frame end: 04 03 02 01
   if (pos >= 4 &&
-      this->rx_buf_[pos - 4] == 0x04 && this->rx_buf_[pos - 3] == 0x03 &&
-      this->rx_buf_[pos - 2] == 0x02 && this->rx_buf_[pos - 1] == 0x01) {
+      this->rx_buf_[pos-4] == 0x04 && this->rx_buf_[pos-3] == 0x03 &&
+      this->rx_buf_[pos-2] == 0x02 && this->rx_buf_[pos-1] == 0x01) {
     this->handle_ack_frame_(this->rx_buf_, pos);
     this->rx_pos_ = 0;
     return;
   }
 
-  // standard/threshold data frame end: F8 F7 F6 F5
   if (pos >= 4 &&
-      this->rx_buf_[pos - 4] == 0xF8 && this->rx_buf_[pos - 3] == 0xF7 &&
-      this->rx_buf_[pos - 2] == 0xF6 && this->rx_buf_[pos - 1] == 0xF5) {
+      this->rx_buf_[pos-4] == 0xF8 && this->rx_buf_[pos-3] == 0xF7 &&
+      this->rx_buf_[pos-2] == 0xF6 && this->rx_buf_[pos-1] == 0xF5) {
     this->handle_standard_frame_(this->rx_buf_, pos);
     this->rx_pos_ = 0;
     return;
@@ -121,9 +140,11 @@ void LD2410SComponent::handle_minimal_frame_(const uint8_t *buf, int len) {
   if (len != 5 || buf[0] != 0x6E || buf[4] != 0x62)
     return;
 
-  bool presence = (buf[1] == 0x02 || buf[1] == 0x03);
-  if (this->has_target_ != nullptr)
-    this->has_target_->publish_state(presence);
+  bool detected = (buf[1] == 0x02 || buf[1] == 0x03);
+  this->publish_presence_(detected);
+
+  if (!detected)
+    return;
 
   uint32_t now = millis();
   if (now - this->last_periodic_ms_ < 1000)
@@ -141,9 +162,11 @@ void LD2410SComponent::handle_standard_frame_(const uint8_t *buf, int len) {
   if (buf[6] != 0x01) return;
   if (buf[len-4] != 0xF8 || buf[len-3] != 0xF7 || buf[len-2] != 0xF6 || buf[len-1] != 0xF5) return;
 
-  bool presence = (buf[7] == 0x02 || buf[7] == 0x03);
-  if (this->has_target_ != nullptr)
-    this->has_target_->publish_state(presence);
+  bool detected = (buf[7] == 0x02 || buf[7] == 0x03);
+  this->publish_presence_(detected);
+
+  if (!detected)
+    return;
 
   uint32_t now = millis();
   if (now - this->last_periodic_ms_ < 1000)
@@ -170,7 +193,7 @@ void LD2410SComponent::handle_ack_frame_(const uint8_t *buf, int len) {
   if (this->last_cmd_ok_ != nullptr)
     this->last_cmd_ok_->publish_state(true);
 
-  if (buf[6] == 0x71 && len >= 22) {  // read params response
+  if (buf[6] == 0x71 && len >= 22) {
     uint32_t max_gate   = buf[10] | (buf[11]<<8) | (buf[12]<<16) | (buf[13]<<24);
     uint32_t min_gate   = buf[14] | (buf[15]<<8) | (buf[16]<<16) | (buf[17]<<24);
     uint32_t none_delay = buf[18] | (buf[19]<<8) | (buf[20]<<16) | (buf[21]<<24);
