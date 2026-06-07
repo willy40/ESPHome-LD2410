@@ -9,6 +9,8 @@
 namespace esphome {
 namespace ld2410s {
 
+static const uint8_t NUM_GATES = 16;
+
 class LD2410SComponent;
 
 class LD2410SNumber : public number::Number, public Component {
@@ -32,6 +34,11 @@ class LD2410SComponent : public PollingComponent, public uart::UARTDevice {
   void set_min_gate_number(LD2410SNumber *n)      { this->min_gate_ = n; }
   void set_none_duration_number(LD2410SNumber *n) { this->none_duration_ = n; }
   void set_off_delay(uint32_t ms)                 { this->off_delay_ms_ = ms; }
+
+  // gate energy sensors — set individually by codegen
+  void set_gate_energy_sensor(uint8_t gate, sensor::Sensor *s) {
+    if (gate < NUM_GATES) this->gate_energy_[gate] = s;
+  }
 
   void setup() override;
   void loop() override;
@@ -63,10 +70,10 @@ class LD2410SComponent : public PollingComponent, public uart::UARTDevice {
   binary_sensor::BinarySensor *has_target_{nullptr};
   binary_sensor::BinarySensor *last_cmd_ok_{nullptr};
   sensor::Sensor *distance_{nullptr};
+  sensor::Sensor *gate_energy_[NUM_GATES]{};
 
-  // debounce: sensor stays ON for off_delay_ms after last detection
   uint32_t last_detection_ms_{0};
-  uint32_t off_delay_ms_{5000};  // default 5 s
+  uint32_t off_delay_ms_{5000};
   bool target_state_{false};
 
   static const int RX_BUF_SIZE = 96;

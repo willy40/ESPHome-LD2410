@@ -176,6 +176,16 @@ void LD2410SComponent::handle_standard_frame_(const uint8_t *buf, int len) {
   int dist = two_byte_to_int_(buf[8], buf[9]);
   if (this->distance_ != nullptr && (int) this->distance_->get_state() != dist)
     this->distance_->publish_state(dist);
+
+  // gate energy: 4 bytes per gate (lo, hi, lo, hi) starting at buf[12]
+  // standard frame layout: buf[12..75] = 16 gates × 4 bytes
+  // each gate value = buf[12 + gate*4] | (buf[13 + gate*4] << 8)  (16-bit, hi bytes unused)
+  for (uint8_t g = 0; g < NUM_GATES; g++) {
+    if (this->gate_energy_[g] == nullptr) continue;
+    uint16_t energy = buf[12 + g * 4] | (buf[13 + g * 4] << 8);
+    if ((int) this->gate_energy_[g]->get_state() != energy)
+      this->gate_energy_[g]->publish_state(energy);
+  }
 }
 
 void LD2410SComponent::handle_ack_frame_(const uint8_t *buf, int len) {
