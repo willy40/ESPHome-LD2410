@@ -10,7 +10,21 @@ static const char *const TAG = "ld2410s";
 // ESPHome lifecycle
 // ---------------------------------------------------------------------------
 
-void LD2410SComponent::setup() {
+void LD2410SNumber::control(float value) {
+  this->publish_state(value);
+  if (this->parent_ == nullptr) return;
+  float max_g = this->parent_->max_gate_  != nullptr ? this->parent_->max_gate_->state  : 16;
+  float min_g = this->parent_->min_gate_  != nullptr ? this->parent_->min_gate_->state  : 0;
+  float none  = this->parent_->none_duration_ != nullptr ? this->parent_->none_duration_->state : 10;
+  switch (this->role_) {
+    case 0: max_g = value; break;
+    case 1: min_g = value; break;
+    case 2: none  = value; break;
+  }
+  this->parent_->set_distances_and_none_duration((int) max_g, (int) min_g, (int) none);
+}
+
+
   this->set_update_interval(15000);
   ESP_LOGCONFIG(TAG, "LD2410S setup done");
 }

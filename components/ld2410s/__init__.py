@@ -22,12 +22,13 @@ CONF_MIN_GATE      = "min_distance_gate"
 CONF_NONE_DURATION = "none_duration"
 
 ld2410s_ns = cg.esphome_ns.namespace("ld2410s")
+
 LD2410SComponent = ld2410s_ns.class_(
     "LD2410SComponent", cg.PollingComponent, uart.UARTDevice
 )
-
-# number.number_schema() is the public API (NUMBER_SCHEMA is private since ESPHome 2023.x)
-NUMBER_SCHEMA = number.number_schema(ld2410s_ns.class_("LD2410SComponent"))
+LD2410SNumber = ld2410s_ns.class_(
+    "LD2410SNumber", number.Number, cg.Component
+)
 
 CONFIG_SCHEMA = (
     cv.Schema(
@@ -44,9 +45,9 @@ CONFIG_SCHEMA = (
                 device_class=DEVICE_CLASS_DISTANCE,
                 icon=ICON_RULER,
             ),
-            cv.Optional(CONF_MAX_GATE):    NUMBER_SCHEMA,
-            cv.Optional(CONF_MIN_GATE):    NUMBER_SCHEMA,
-            cv.Optional(CONF_NONE_DURATION): NUMBER_SCHEMA,
+            cv.Optional(CONF_MAX_GATE): number.number_schema(LD2410SNumber),
+            cv.Optional(CONF_MIN_GATE): number.number_schema(LD2410SNumber),
+            cv.Optional(CONF_NONE_DURATION): number.number_schema(LD2410SNumber),
         }
     )
     .extend(cv.polling_component_schema("15s"))
@@ -75,16 +76,25 @@ async def to_code(config):
         num = await number.new_number(
             max_gate_config, min_value=1, max_value=16, step=1
         )
+        await cg.register_component(num, max_gate_config)
+        cg.add(num.set_parent(var))
+        cg.add(num.set_role(0))
         cg.add(var.set_max_gate_number(num))
 
     if min_gate_config := config.get(CONF_MIN_GATE):
         num = await number.new_number(
             min_gate_config, min_value=0, max_value=16, step=1
         )
+        await cg.register_component(num, min_gate_config)
+        cg.add(num.set_parent(var))
+        cg.add(num.set_role(1))
         cg.add(var.set_min_gate_number(num))
 
     if none_dur_config := config.get(CONF_NONE_DURATION):
         num = await number.new_number(
             none_dur_config, min_value=10, max_value=120, step=1
         )
+        await cg.register_component(num, none_dur_config)
+        cg.add(num.set_parent(var))
+        cg.add(num.set_role(2))
         cg.add(var.set_none_duration_number(num))

@@ -24,13 +24,14 @@ external_components:
       type: git
       url: https://github.com/willy40/ESPHome-LD2410
       ref: ld2410s-support
+    refresh: always
     components: [ld2410s]
 
 uart:
   id: uart_bus
   tx_pin: TX
   rx_pin: RX
-  baud_rate: 115200   # LD2410S default — differs from LD2410 (256000)
+  baud_rate: 115200
   parity: NONE
   stop_bits: 1
 
@@ -49,15 +50,12 @@ ld2410s:
 
   max_distance_gate:
     name: "Max Distance Gate"
-    id: max_distance_gate
 
   min_distance_gate:
     name: "Min Distance Gate"
-    id: min_distance_gate
 
   none_duration:
     name: "None Duration"
-    id: none_duration
 
 button:
   - platform: template
@@ -74,16 +72,6 @@ button:
     name: "Get Config"
     on_press:
       - lambda: 'id(ld2410s_radar).query_parameters();'
-
-  - platform: template
-    name: "Apply Gate Settings"
-    on_press:
-      - lambda: |
-          id(ld2410s_radar).set_distances_and_none_duration(
-            (int) id(max_distance_gate).state,
-            (int) id(min_distance_gate).state,
-            (int) id(none_duration).state
-          );
 
   - platform: template
     name: "Switch to Standard Mode"

@@ -9,6 +9,19 @@
 namespace esphome {
 namespace ld2410s {
 
+// Forward declare the main component so Number subclasses can call back into it
+class LD2410SComponent;
+
+class LD2410SNumber : public number::Number, public Component {
+ public:
+  void set_parent(LD2410SComponent *parent) { this->parent_ = parent; }
+  void set_role(uint8_t role) { this->role_ = role; }  // 0=max_gate 1=min_gate 2=none_duration
+ protected:
+  void control(float value) override;
+  LD2410SComponent *parent_{nullptr};
+  uint8_t role_{0};
+};
+
 /*
  * LD2410S protocol differs from LD2410:
  *  - Default baud rate: 115200  (LD2410: 256000)
@@ -28,10 +41,10 @@ class LD2410SComponent : public PollingComponent, public uart::UARTDevice {
   // ----- setters called from Python codegen -----
   void set_has_target_binary_sensor(binary_sensor::BinarySensor *s)  { this->has_target_ = s; }
   void set_last_cmd_ok_binary_sensor(binary_sensor::BinarySensor *s) { this->last_cmd_ok_ = s; }
-  void set_distance_sensor(sensor::Sensor *s)     { this->distance_ = s; }
-  void set_max_gate_number(number::Number *n)      { this->max_gate_ = n; }
-  void set_min_gate_number(number::Number *n)      { this->min_gate_ = n; }
-  void set_none_duration_number(number::Number *n) { this->none_duration_ = n; }
+  void set_distance_sensor(sensor::Sensor *s)       { this->distance_ = s; }
+  void set_max_gate_number(LD2410SNumber *n)        { this->max_gate_ = n; }
+  void set_min_gate_number(LD2410SNumber *n)        { this->min_gate_ = n; }
+  void set_none_duration_number(LD2410SNumber *n)   { this->none_duration_ = n; }
 
   // ----- ESPHome lifecycle -----
   void setup() override;
@@ -61,9 +74,9 @@ class LD2410SComponent : public PollingComponent, public uart::UARTDevice {
   binary_sensor::BinarySensor *has_target_{nullptr};
   binary_sensor::BinarySensor *last_cmd_ok_{nullptr};
   sensor::Sensor *distance_{nullptr};
-  number::Number *max_gate_{nullptr};
-  number::Number *min_gate_{nullptr};
-  number::Number *none_duration_{nullptr};
+  LD2410SNumber *max_gate_{nullptr};
+  LD2410SNumber *min_gate_{nullptr};
+  LD2410SNumber *none_duration_{nullptr};
 
   // ----- rx buffer -----
   static const int RX_BUF_SIZE = 96;
