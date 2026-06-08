@@ -29,6 +29,10 @@ void LD2410SNumber::control(float value) {
 // ---------------------------------------------------------------------------
 void LD2410SComponent::setup() {
   ESP_LOGCONFIG(TAG, "LD2410S setup done");
+  // query parameters after 2s so the sensor UART is ready and loop() is running
+  this->set_timeout(2000, [this]() {
+    this->query_parameters();
+  });
 }
 
 void LD2410SComponent::loop() {

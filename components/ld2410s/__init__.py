@@ -14,14 +14,14 @@ DEPENDENCIES = ["uart"]
 AUTO_LOAD = ["sensor", "binary_sensor", "number"]
 CODEOWNERS = ["@willy40"]
 
-CONF_HAS_TARGET       = "has_target"
-CONF_LAST_CMD_OK      = "last_command_success"
-CONF_DISTANCE         = "distance"
-CONF_MAX_GATE         = "max_distance_gate"
-CONF_MIN_GATE         = "min_distance_gate"
-CONF_NONE_DURATION    = "none_duration"
-CONF_OFF_DELAY        = "off_delay"
-CONF_GATE_ENERGY      = "gate_energy"   # list of 0–16 sensor entries
+CONF_HAS_TARGET    = "has_target"
+CONF_LAST_CMD_OK   = "last_command_success"
+CONF_DISTANCE      = "distance"
+CONF_MAX_GATE      = "max_distance_gate"
+CONF_MIN_GATE      = "min_distance_gate"
+CONF_NONE_DURATION = "none_duration"
+CONF_OFF_DELAY     = "off_delay"
+CONF_GATE_ENERGY   = "gate_energy"
 
 NUM_GATES = 16
 
@@ -34,6 +34,9 @@ LD2410SNumber = ld2410s_ns.class_(
     "LD2410SNumber", number.Number, cg.Component
 )
 
+# gate_energy: list of exactly NUM_GATES entries, each a plain sensor schema.
+# Names should be simple: "Gate 0", "Gate 1", ...
+# → entity_ids: sensor.<device>_gate_0, sensor.<device>_gate_1, ...
 GATE_ENERGY_SCHEMA = sensor.sensor_schema(
     unit_of_measurement="",
     accuracy_decimals=0,
@@ -60,13 +63,9 @@ CONFIG_SCHEMA = (
             cv.Optional(CONF_MAX_GATE):      number.number_schema(LD2410SNumber),
             cv.Optional(CONF_MIN_GATE):      number.number_schema(LD2410SNumber),
             cv.Optional(CONF_NONE_DURATION): number.number_schema(LD2410SNumber),
-            # gate_energy: list of up to 16 sensor definitions
-            # each entry must have an 'index' key (0–15) so you can define only
-            # the gates you care about without creating all 16
-            cv.Optional(CONF_GATE_ENERGY): cv.ensure_list(
-                GATE_ENERGY_SCHEMA.extend(
-                    {cv.Required("index"): cv.int_range(min=0, max=NUM_GATES - 1)}
-                )
+            cv.Optional(CONF_GATE_ENERGY): cv.All(
+                cv.ensure_list(GATE_ENERGY_SCHEMA),
+                cv.Length(min=NUM_GATES, max=NUM_GATES),
             ),
         }
     )
@@ -115,7 +114,6 @@ async def to_code(config):
         cg.add(num.set_role(2))
         cg.add(var.set_none_duration_number(num))
 
-    for gate_cfg in config.get(CONF_GATE_ENERGY, []):
-        idx = gate_cfg["index"]
+    for i, gate_cfg in enumerate(config.get(CONF_GATE_ENERGY, [])):
         sens = await sensor.new_sensor(gate_cfg)
-        cg.add(var.set_gate_energy_sensor(idx, sens))
+        cg.add(var.set_gate_energy_sensor(i, sens))

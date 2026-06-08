@@ -38,6 +38,7 @@ uart:
 ld2410s:
   id: ld2410s_radar
   uart_id: uart_bus
+  off_delay: 5s
 
   has_target:
     name: "Has Target"
@@ -56,6 +57,26 @@ ld2410s:
 
   none_duration:
     name: "None Duration"
+
+  # gate_energy: requires standard mode (button "Switch to Standard Mode")
+  # entity_ids: sensor.<device>_gate_0 … sensor.<device>_gate_15
+  gate_energy:
+    - name: "Gate 0"
+    - name: "Gate 1"
+    - name: "Gate 2"
+    - name: "Gate 3"
+    - name: "Gate 4"
+    - name: "Gate 5"
+    - name: "Gate 6"
+    - name: "Gate 7"
+    - name: "Gate 8"
+    - name: "Gate 9"
+    - name: "Gate 10"
+    - name: "Gate 11"
+    - name: "Gate 12"
+    - name: "Gate 13"
+    - name: "Gate 14"
+    - name: "Gate 15"
 
 button:
   - platform: template
@@ -82,39 +103,3 @@ button:
     name: "Switch to Minimal Mode"
     on_press:
       - lambda: 'id(ld2410s_radar).switch_output_mode(false);'
-
-  # gate_energy: dostępne tylko w standard mode (przycisk "Switch to Standard Mode")
-  # każdy wpis wymaga 'index' (0-15), możesz dodać tylko wybrane bramy
-  # gate_energy:
-  #   - index: 0
-  #     name: "Gate 0 Energy (0-0.75m)"
-  #   - index: 1
-  #     name: "Gate 1 Energy (0.75-1.5m)"
-  #   - index: 2
-  #     name: "Gate 2 Energy (1.5-2.25m)"
-  #   - index: 3
-  #     name: "Gate 3 Energy (2.25-3m)"
-  #   - index: 4
-  #     name: "Gate 4 Energy (3-3.75m)"
-  #   - index: 5
-  #     name: "Gate 5 Energy (3.75-4.5m)"
-  #   - index: 6
-  #     name: "Gate 6 Energy (4.5-5.25m)"
-  #   - index: 7
-  #     name: "Gate 7 Energy (5.25-6m)"
-  #   - index: 8
-  #     name: "Gate 8 Energy (6-6.75m)"
-  #   - index: 9
-  #     name: "Gate 9 Energy (6.75-7.5m)"
-  #   - index: 10
-  #     name: "Gate 10 Energy (7.5-8.25m)"
-  #   - index: 11
-  #     name: "Gate 11 Energy (8.25-9m)"
-  #   - index: 12
-  #     name: "Gate 12 Energy (9-9.75m)"
-  #   - index: 13
-  #     name: "Gate 13 Energy (9.75-10.5m)"
-  #   - index: 14
-  #     name: "Gate 14 Energy (10.5-11.25m)"
-  #   - index: 15
-  #     name: "Gate 15 Energy (11.25-12m)"
