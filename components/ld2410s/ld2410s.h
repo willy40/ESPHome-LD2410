@@ -11,6 +11,8 @@ namespace ld2410s {
 
 static const uint8_t NUM_GATES = 16;
 
+enum class CmdFlow : uint8_t { IDLE, QUERY_PARAMS, SET_DISTANCES, SWITCH_OUTPUT };
+
 class LD2410SComponent;
 
 class LD2410SNumber : public number::Number, public Component {
@@ -62,6 +64,7 @@ class LD2410SComponent : public PollingComponent, public uart::UARTDevice {
   void handle_standard_frame_(const uint8_t *buf, int len);
   void handle_ack_frame_(const uint8_t *buf, int len);
   void publish_presence_(bool detected);
+  void advance_flow_();
 
   static int16_t two_byte_to_int_(uint8_t lo, uint8_t hi) {
     return static_cast<int16_t>((hi << 8) | lo);
@@ -80,6 +83,14 @@ class LD2410SComponent : public PollingComponent, public uart::UARTDevice {
   uint8_t rx_buf_[RX_BUF_SIZE]{};
   int rx_pos_{0};
   uint32_t last_periodic_ms_{0};
+
+  // async command state machine
+  CmdFlow cmd_flow_{CmdFlow::IDLE};
+  uint8_t cmd_step_{0};
+  int     pending_max_gate_{0};
+  int     pending_min_gate_{0};
+  int     pending_none_s_{0};
+  bool    pending_standard_{false};
 };
 
 }  // namespace ld2410s

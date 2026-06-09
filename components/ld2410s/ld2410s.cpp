@@ -72,7 +72,7 @@ void LD2410SComponent::publish_presence_(bool detected) {
 }
 
 // ---------------------------------------------------------------------------
-// UART framing
+// UART framing — no delay(), bytes are sent and we wait for ACK via loop()
 // ---------------------------------------------------------------------------
 void LD2410SComponent::send_command_(uint8_t cmd_lo, uint8_t cmd_hi,
                                      const uint8_t *value, size_t value_len) {
@@ -95,7 +95,6 @@ void LD2410SComponent::send_command_(uint8_t cmd_lo, uint8_t cmd_hi,
 
   this->write_byte(0x04); this->write_byte(0x03);
   this->write_byte(0x02); this->write_byte(0x01);
-  delay(50);
 }
 
 void LD2410SComponent::readline_(int readch) {
@@ -202,11 +201,13 @@ void LD2410SComponent::handle_ack_frame_(const uint8_t *buf, int len) {
     ESP_LOGW(TAG, "Command ACK error: 0x%04X", ack);
     if (this->last_cmd_ok_ != nullptr)
       this->last_cmd_ok_->publish_state(false);
+    this->cmd_flow_ = CmdFlow::IDLE;
     return;
   }
   if (this->last_cmd_ok_ != nullptr)
     this->last_cmd_ok_->publish_state(true);
 
+  // parse query-params response before advancing the flow
   if (buf[6] == 0x71 && len >= 22) {
     uint32_t max_gate   = buf[10] | (buf[11]<<8) | (buf[12]<<16) | (buf[13]<<24);
     uint32_t min_gate   = buf[14] | (buf[15]<<8) | (buf[16]<<16) | (buf[17]<<24);
@@ -216,10 +217,72 @@ void LD2410SComponent::handle_ack_frame_(const uint8_t *buf, int len) {
     if (this->min_gate_ != nullptr)      this->min_gate_->publish_state(min_gate);
     if (this->none_duration_ != nullptr) this->none_duration_->publish_state(none_delay);
   }
+
+  this->advance_flow_();
 }
 
 // ---------------------------------------------------------------------------
-// Public actions
+// Async command state machine
+//
+// Each flow has numbered steps. On every successful ACK, advance_flow_() is
+// called and sends the next command in the sequence, or resets to IDLE when done.
+//
+//  QUERY_PARAMS:   step 0 enter_config → step 1 query(0x71) → step 2 exit_config → IDLE
+//  SET_DISTANCES:  step 0 enter_config → step 1 set(0x70) → step 2 query(0x71) → step 3 exit_config → IDLE
+//  SWITCH_OUTPUT:  step 0 enter_config → step 1 switch(0x7A) → step 2 exit_config → IDLE
+// ---------------------------------------------------------------------------
+void LD2410SComponent::advance_flow_() {
+  this->cmd_step_++;
+
+  switch (this->cmd_flow_) {
+
+    case CmdFlow::QUERY_PARAMS:
+      if (this->cmd_step_ == 1) {
+        uint8_t val[6] = {0x05, 0x00, 0x0A, 0x00, 0x06, 0x00};
+        this->send_command_(0x71, 0x00, val, 6);
+      } else if (this->cmd_step_ == 2) {
+        this->send_command_(0xFE, 0x00, nullptr, 0);
+      } else {
+        this->cmd_flow_ = CmdFlow::IDLE;
+      }
+      break;
+
+    case CmdFlow::SET_DISTANCES:
+      if (this->cmd_step_ == 1) {
+        uint8_t val[18] = {
+          0x05, 0x00, (uint8_t)(this->pending_max_gate_ & 0xFF), (uint8_t)(this->pending_max_gate_ >> 8), 0x00, 0x00,
+          0x0A, 0x00, (uint8_t)(this->pending_min_gate_ & 0xFF), (uint8_t)(this->pending_min_gate_ >> 8), 0x00, 0x00,
+          0x06, 0x00, (uint8_t)(this->pending_none_s_   & 0xFF), (uint8_t)(this->pending_none_s_   >> 8), 0x00, 0x00,
+        };
+        this->send_command_(0x70, 0x00, val, 18);
+      } else if (this->cmd_step_ == 2) {
+        uint8_t val[6] = {0x05, 0x00, 0x0A, 0x00, 0x06, 0x00};
+        this->send_command_(0x71, 0x00, val, 6);
+      } else if (this->cmd_step_ == 3) {
+        this->send_command_(0xFE, 0x00, nullptr, 0);
+      } else {
+        this->cmd_flow_ = CmdFlow::IDLE;
+      }
+      break;
+
+    case CmdFlow::SWITCH_OUTPUT:
+      if (this->cmd_step_ == 1) {
+        uint8_t val[6] = {0x00, 0x00, (uint8_t)(this->pending_standard_ ? 0x01 : 0x00), 0x00, 0x00, 0x00};
+        this->send_command_(0x7A, 0x00, val, 6);
+      } else if (this->cmd_step_ == 2) {
+        this->send_command_(0xFE, 0x00, nullptr, 0);
+      } else {
+        this->cmd_flow_ = CmdFlow::IDLE;
+      }
+      break;
+
+    default:
+      break;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Public actions — each starts a flow by entering config mode (step 0)
 // ---------------------------------------------------------------------------
 void LD2410SComponent::set_config_mode(bool enable) {
   if (enable) {
@@ -231,27 +294,40 @@ void LD2410SComponent::set_config_mode(bool enable) {
 }
 
 void LD2410SComponent::query_parameters() {
-  uint8_t val[6] = {0x05, 0x00,  0x0A, 0x00,  0x06, 0x00};
-  this->send_command_(0x71, 0x00, val, 6);
+  if (this->cmd_flow_ != CmdFlow::IDLE) {
+    ESP_LOGW(TAG, "query_parameters: command in progress, ignoring");
+    return;
+  }
+  this->cmd_flow_ = CmdFlow::QUERY_PARAMS;
+  this->cmd_step_ = 0;
+  uint8_t val[2] = {0x01, 0x00};
+  this->send_command_(0xFF, 0x00, val, 2);  // enter config, flow advances on ACK
 }
 
 void LD2410SComponent::set_distances_and_none_duration(int max_gate, int min_gate, int none_s) {
-  uint8_t val[18] = {
-    0x05, 0x00, (uint8_t)(max_gate & 0xFF), (uint8_t)(max_gate >> 8), 0x00, 0x00,
-    0x0A, 0x00, (uint8_t)(min_gate & 0xFF), (uint8_t)(min_gate >> 8), 0x00, 0x00,
-    0x06, 0x00, (uint8_t)(none_s   & 0xFF), (uint8_t)(none_s   >> 8), 0x00, 0x00,
-  };
-  this->set_config_mode(true);
-  this->send_command_(0x70, 0x00, val, 18);
-  this->query_parameters();
-  this->set_config_mode(false);
+  if (this->cmd_flow_ != CmdFlow::IDLE) {
+    ESP_LOGW(TAG, "set_distances: command in progress, ignoring");
+    return;
+  }
+  this->pending_max_gate_ = max_gate;
+  this->pending_min_gate_ = min_gate;
+  this->pending_none_s_   = none_s;
+  this->cmd_flow_ = CmdFlow::SET_DISTANCES;
+  this->cmd_step_ = 0;
+  uint8_t val[2] = {0x01, 0x00};
+  this->send_command_(0xFF, 0x00, val, 2);
 }
 
 void LD2410SComponent::switch_output_mode(bool standard) {
-  uint8_t val[6] = {0x00, 0x00, (uint8_t)(standard ? 0x01 : 0x00), 0x00, 0x00, 0x00};
-  this->set_config_mode(true);
-  this->send_command_(0x7A, 0x00, val, 6);
-  this->set_config_mode(false);
+  if (this->cmd_flow_ != CmdFlow::IDLE) {
+    ESP_LOGW(TAG, "switch_output_mode: command in progress, ignoring");
+    return;
+  }
+  this->pending_standard_ = standard;
+  this->cmd_flow_ = CmdFlow::SWITCH_OUTPUT;
+  this->cmd_step_ = 0;
+  uint8_t val[2] = {0x01, 0x00};
+  this->send_command_(0xFF, 0x00, val, 2);
 }
 
 }  // namespace ld2410s
