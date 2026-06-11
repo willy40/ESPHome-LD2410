@@ -1,0 +1,57 @@
+esphome:
+  name: ld2410s-dbg
+  # Flagi wstrzykiwane do generowanego platformio.ini.
+  # ESPHome nadpisuje platformio.ini przy każdej kompilacji, więc debug
+  # konfigurujemy TUTAJ, nie ręcznie w platformio.ini.
+  platformio_options:
+    build_type: debug          # PlatformIO ustawia -Og + symbole
+    debug_tool: esp-builtin    # natywny USB-JTAG ESP32-S3 (bez adaptera)
+    debug_speed: "12000"
+    build_flags:
+      - "-ggdb3"
+      - "-Og"
+    build_unflags:
+      - "-Os"                  # usuń agresywną optymalizację, inaczej breakpointy "skaczą"
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: arduino
+
+logger:
+  level: VERBOSE
+  # logi po natywnym USB-CDC (ten sam port co JTAG)
+  hardware_uart: USB_SERIAL_JTAG
+
+# Bez WiFi/API/OTA na czas debugowania — mniej zmiennych w grze.
+# Flashujesz i debugujesz po kablu USB.
+
+external_components:
+  - source:
+      type: local
+      path: components
+    components: [ld2410s]
+
+uart:
+  id: uart_bus
+  tx_pin: GPIO17        # -> RX czujnika
+  rx_pin: GPIO18        # <- TX czujnika
+  baud_rate: 115200
+  parity: NONE
+  stop_bits: 1
+
+ld2410s:
+  id: ld2410s_radar
+  uart_id: uart_bus
+  off_delay: 5s
+
+  has_target:
+    name: "Has Target"
+  distance:
+    name: "Target Distance"
+
+button:
+  - platform: template
+    name: "Get Config"
+    on_press:
+      - lambda: 'id(ld2410s_radar).query_parameters();'

@@ -83,8 +83,8 @@ void LD2410SComponent::send_command_(uint8_t cmd_lo, uint8_t cmd_hi,
   this->write_byte(0xFB); this->write_byte(0xFA);
 
   uint16_t len = 2 + (uint16_t) value_len;
-  this->write_byte(lowByte(len));
-  this->write_byte(highByte(len));
+  this->write_byte(static_cast<uint8_t>(len & 0xFF));
+  this->write_byte(static_cast<uint8_t>(len >> 8));
   this->write_byte(cmd_lo);
   this->write_byte(cmd_hi);
 
