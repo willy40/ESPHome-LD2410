@@ -1,8 +1,6 @@
 #include "ld2410s.h"
 #include "esphome/core/log.h"
 
-#include <cstring>
-
 namespace esphome
 {
   namespace ld2410s
@@ -43,8 +41,12 @@ namespace esphome
     {
       ESP_LOGCONFIG(TAG, "LD2410S setup done");
       // query parameters after 2s so the sensor UART is ready and loop() is running
-      this->set_timeout(2000, [this]()
+      this->set_timeout(500, [this]()
                         { this->query_parameters(); });
+
+      // TEST: switch to standard output mode after a timeout
+      // this->set_timeout(100, [this]()
+      //                   { this->switch_output_mode(false); });
     }
 
     void LD2410SComponent::loop()
@@ -122,88 +124,121 @@ namespace esphome
       this->write_byte(0x01);
     }
 
+    // ---------------------------------------------------------------------------
+    // Ring-buffer helpers
+    // ---------------------------------------------------------------------------
+    uint8_t LD2410SComponent::rx_peek_(size_t offset) const
+    {
+      return this->rx_buf_[(this->rx_head_ + offset) & RX_BUF_MASK];
+    }
+
+    void LD2410SComponent::rx_drop_(size_t n)
+    {
+      this->rx_head_ = (this->rx_head_ + n) & RX_BUF_MASK;
+      this->rx_count_ -= n;
+    }
+
+    void LD2410SComponent::rx_extract_(uint8_t *out, size_t len)
+    {
+      for (size_t i = 0; i < len; i++)
+        out[i] = this->rx_buf_[(this->rx_head_ + i) & RX_BUF_MASK];
+      this->rx_drop_(len);
+    }
+
     void LD2410SComponent::readline_(int readch)
     {
       if (readch < 0)
         return;
 
-      auto drop_first = [this]()
-      {
-        this->rx_pos_--;
-        memmove(this->rx_buf_, this->rx_buf_ + 1, this->rx_pos_);
-      };
-
       // buffer full without a complete frame: drop the oldest byte so a frame
       // hidden inside the remaining data can still be found
-      if (this->rx_pos_ >= RX_BUF_SIZE)
-        drop_first();
-      this->rx_buf_[this->rx_pos_++] = static_cast<uint8_t>(readch);
+      if (this->rx_count_ >= RX_BUF_SIZE)
+        this->rx_drop_(1);
 
-      ESP_LOGVV(TAG, "RX buf: %s", format_hex_pretty(this->rx_buf_, this->rx_pos_).c_str());
+      this->rx_buf_[this->rx_tail_] = static_cast<uint8_t>(readch);
+      this->rx_tail_ = (this->rx_tail_ + 1) & RX_BUF_MASK;
+      this->rx_count_++;
 
-      while (this->rx_pos_ > 0)
+      while (this->rx_count_ > 0)
       {
-        const uint8_t b0 = this->rx_buf_[0];
+        const uint8_t b0 = this->rx_peek_(0);
 
-        // resync: only 0x6E (minimal), 0xFD (ACK) and 0xF4 (standard) can start a frame
-        if (b0 != 0x6E && b0 != 0xFD && b0 != 0xF4)
+        // resync: only minimal, ACK and standard frame headers can start a frame
+        if (b0 != FRAME_HDR_MINIMAL && b0 != FRAME_HDR_ACK0 && b0 != FRAME_HDR_STD0)
         {
-          drop_first();
+          this->rx_drop_(1);
           continue;
         }
 
-        const int pos = this->rx_pos_;
+        const size_t pos = this->rx_count_;
 
-        if (b0 == 0x6E)
+        if (b0 == FRAME_HDR_MINIMAL)
         {
-          if (pos < 5)
+          if (pos < MINIMAL_FRAME_LEN)
             return; // wait for more data
-          if (this->rx_buf_[4] == 0x62)
+          if (this->rx_peek_(4) == FRAME_FTR_MINIMAL)
           {
-            ESP_LOGD(TAG, "Minimal frame: %s", format_hex_pretty(this->rx_buf_, 5).c_str());
-            this->handle_minimal_frame_(this->rx_buf_, 5);
-            this->rx_pos_ = 0;
+            uint8_t frame[MINIMAL_FRAME_LEN];
+            this->rx_extract_(frame, MINIMAL_FRAME_LEN);
+            ESP_LOGD(TAG, "Minimal frame: %s", format_hex_pretty(frame, MINIMAL_FRAME_LEN).c_str());
+            this->handle_minimal_frame_(frame, MINIMAL_FRAME_LEN);
             return;
           }
-          drop_first(); // false header, resync on remaining bytes
+          this->rx_drop_(1); // false header, resync on remaining bytes
           continue;
         }
 
-        if (b0 == 0xFD)
+        if (b0 == FRAME_HDR_ACK0)
         {
-          if ((pos >= 2 && this->rx_buf_[1] != 0xFC) ||
-              (pos >= 3 && this->rx_buf_[2] != 0xFB) ||
-              (pos >= 4 && this->rx_buf_[3] != 0xFA))
+          if ((pos >= 2 && this->rx_peek_(1) != FRAME_HDR_ACK1) ||
+              (pos >= 3 && this->rx_peek_(2) != FRAME_HDR_ACK2) ||
+              (pos >= 4 && this->rx_peek_(3) != FRAME_HDR_ACK3))
           {
-            drop_first();
+            this->rx_drop_(1);
             continue;
           }
-          if (pos >= 10 &&
-              this->rx_buf_[pos - 4] == 0x04 && this->rx_buf_[pos - 3] == 0x03 &&
-              this->rx_buf_[pos - 2] == 0x02 && this->rx_buf_[pos - 1] == 0x01)
+          if (pos >= ACK_FRAME_MIN_LEN &&
+              this->rx_peek_(pos - 4) == ACK_FTR0 && this->rx_peek_(pos - 3) == ACK_FTR1 &&
+              this->rx_peek_(pos - 2) == ACK_FTR2 && this->rx_peek_(pos - 1) == ACK_FTR3)
           {
-            ESP_LOGD(TAG, "ACK frame: %s", format_hex_pretty(this->rx_buf_, pos).c_str());
-            this->handle_ack_frame_(this->rx_buf_, pos);
-            this->rx_pos_ = 0;
+            uint8_t frame[ACK_FRAME_MAX_LEN];
+            size_t len = (pos < ACK_FRAME_MAX_LEN) ? pos : ACK_FRAME_MAX_LEN;
+            this->rx_extract_(frame, len);
+            ESP_LOGD(TAG, "ACK frame: %s", format_hex_pretty(frame, len).c_str());
+            this->handle_ack_frame_(frame, len);
+            return;
+          }
+          if (pos >= ACK_FRAME_MAX_LEN)
+          {
+            this->rx_drop_(1); // give up resync on this header
+            continue;
           }
           return; // wait for more data
         }
 
-        // b0 == 0xF4 — standard frame
-        if ((pos >= 2 && this->rx_buf_[1] != 0xF3) ||
-            (pos >= 3 && this->rx_buf_[2] != 0xF2) ||
-            (pos >= 4 && this->rx_buf_[3] != 0xF1))
+        // b0 == FRAME_HDR_STD0 — standard frame
+        if ((pos >= 2 && this->rx_peek_(1) != FRAME_HDR_STD1) ||
+            (pos >= 3 && this->rx_peek_(2) != FRAME_HDR_STD2) ||
+            (pos >= 4 && this->rx_peek_(3) != FRAME_HDR_STD3))
         {
-          drop_first();
+          this->rx_drop_(1);
           continue;
         }
-        if (pos >= 80 &&
-            this->rx_buf_[pos - 4] == 0xF8 && this->rx_buf_[pos - 3] == 0xF7 &&
-            this->rx_buf_[pos - 2] == 0xF6 && this->rx_buf_[pos - 1] == 0xF5)
+        if (pos >= STANDARD_FRAME_MIN_LEN &&
+            this->rx_peek_(pos - 4) == STD_FTR0 && this->rx_peek_(pos - 3) == STD_FTR1 &&
+            this->rx_peek_(pos - 2) == STD_FTR2 && this->rx_peek_(pos - 1) == STD_FTR3)
         {
-          ESP_LOGD(TAG, "Standard frame: %s", format_hex_pretty(this->rx_buf_, pos).c_str());
-          this->handle_standard_frame_(this->rx_buf_, pos);
-          this->rx_pos_ = 0;
+          uint8_t frame[STANDARD_FRAME_MAX_LEN];
+          size_t len = (pos < STANDARD_FRAME_MAX_LEN) ? pos : STANDARD_FRAME_MAX_LEN;
+          this->rx_extract_(frame, len);
+          ESP_LOGD(TAG, "Standard frame: %s", format_hex_pretty(frame, len).c_str());
+          this->handle_standard_frame_(frame, len);
+          return;
+        }
+        if (pos >= STANDARD_FRAME_MAX_LEN)
+        {
+          this->rx_drop_(1); // give up resync on this header
+          continue;
         }
         return; // wait for more data
       }
@@ -214,59 +249,52 @@ namespace esphome
     // ---------------------------------------------------------------------------
     void LD2410SComponent::handle_minimal_frame_(const uint8_t *buf, int len)
     {
-      if (len != 5 || buf[0] != 0x6E || buf[4] != 0x62)
+      if (len != (int)MINIMAL_FRAME_LEN || buf[0] != FRAME_HDR_MINIMAL || buf[4] != FRAME_FTR_MINIMAL)
         return;
 
-      bool detected = (buf[1] == 0x02 || buf[1] == 0x03);
+      bool detected = (buf[MIN_OFF_STATE] == TARGET_STATE_MOVING || buf[MIN_OFF_STATE] == TARGET_STATE_STATIC);
       this->publish_presence_(detected);
 
-      if (!detected)
-        return;
-
-      uint32_t now = millis();
-      if (now - this->last_periodic_ms_ < 1000)
-        return;
-      this->last_periodic_ms_ = now;
-
-      int dist = two_byte_to_int_(buf[2], buf[3]);
+      int dist = two_byte_to_int_(buf[MIN_OFF_DIST_LO], buf[MIN_OFF_DIST_HI]);
       if (this->distance_ != nullptr && (int)this->distance_->get_state() != dist)
         this->distance_->publish_state(dist);
     }
 
     void LD2410SComponent::handle_standard_frame_(const uint8_t *buf, int len)
     {
-      if (len < 80)
+      if (len < (int)STANDARD_FRAME_MIN_LEN)
         return;
-      if (buf[0] != 0xF4 || buf[1] != 0xF3 || buf[2] != 0xF2 || buf[3] != 0xF1)
+      if (buf[0] != FRAME_HDR_STD0 || buf[1] != FRAME_HDR_STD1 || buf[2] != FRAME_HDR_STD2 || buf[3] != FRAME_HDR_STD3)
         return;
-      if (buf[6] != 0x01)
+      if (buf[STD_OFF_FRAME_TYPE] != STD_FRAME_TYPE_TARGET)
         return;
-      if (buf[len - 4] != 0xF8 || buf[len - 3] != 0xF7 || buf[len - 2] != 0xF6 || buf[len - 1] != 0xF5)
+      if (buf[len - 4] != STD_FTR0 || buf[len - 3] != STD_FTR1 || buf[len - 2] != STD_FTR2 || buf[len - 1] != STD_FTR3)
         return;
 
-      bool detected = (buf[7] == 0x02 || buf[7] == 0x03);
+      bool detected = (buf[STD_OFF_STATE] == TARGET_STATE_MOVING || buf[STD_OFF_STATE] == TARGET_STATE_STATIC);
       this->publish_presence_(detected);
 
-      if (!detected)
+      // keepalive "ping" frames carry an all-zero payload (distance + every gate
+      // energy == 0); skip them so they don't show up as spikes on the chart
+      uint8_t payload_or = 0;
+      for (int i = STD_OFF_DIST_LO; i < len - 4; i++)
+        payload_or |= buf[i];
+      if (payload_or == 0)
         return;
 
-      uint32_t now = millis();
-      if (now - this->last_periodic_ms_ < 1000)
-        return;
-      this->last_periodic_ms_ = now;
-
-      int dist = two_byte_to_int_(buf[8], buf[9]);
+      int dist = two_byte_to_int_(buf[STD_OFF_DIST_LO], buf[STD_OFF_DIST_HI]);
       if (this->distance_ != nullptr && (int)this->distance_->get_state() != dist)
         this->distance_->publish_state(dist);
 
-      // gate energy: 4 bytes per gate (lo, hi, lo, hi) starting at buf[12]
-      // standard frame layout: buf[12..75] = 16 gates × 4 bytes
-      // each gate value = buf[12 + gate*4] | (buf[13 + gate*4] << 8)  (16-bit, hi bytes unused)
+      // gate energy: 4 bytes per gate (lo, hi, lo, hi) starting at STD_OFF_GATE_ENERGY_START
+      // standard frame layout: 16 gates × STD_GATE_ENERGY_STRIDE bytes
+      // each gate value = buf[off] | (buf[off + 1] << 8)  (16-bit, hi bytes unused)
       for (uint8_t g = 0; g < NUM_GATES; g++)
       {
         if (this->gate_energy_[g] == nullptr)
           continue;
-        uint16_t energy = buf[12 + g * 4] | (buf[13 + g * 4] << 8);
+        int off = STD_OFF_GATE_ENERGY_START + g * STD_GATE_ENERGY_STRIDE;
+        uint16_t energy = buf[off] | (buf[off + 1] << 8);
         if ((int)this->gate_energy_[g]->get_state() != energy)
           this->gate_energy_[g]->publish_state(energy);
       }
@@ -274,14 +302,14 @@ namespace esphome
 
     void LD2410SComponent::handle_ack_frame_(const uint8_t *buf, int len)
     {
-      if (len < 10)
+      if (len < (int)ACK_FRAME_MIN_LEN)
         return;
-      if (buf[0] != 0xFD || buf[1] != 0xFC || buf[2] != 0xFB || buf[3] != 0xFA)
+      if (buf[0] != FRAME_HDR_ACK0 || buf[1] != FRAME_HDR_ACK1 || buf[2] != FRAME_HDR_ACK2 || buf[3] != FRAME_HDR_ACK3)
         return;
-      if (buf[7] != 0x01)
+      if (buf[ACK_OFF_FRAME_TYPE] != ACK_FRAME_TYPE_REPLY)
         return;
 
-      uint16_t ack = static_cast<uint16_t>((buf[9] << 8) | buf[8]);
+      uint16_t ack = static_cast<uint16_t>((buf[ACK_OFF_STATUS_HI] << 8) | buf[ACK_OFF_STATUS_LO]);
       if (ack != 0x0000)
       {
         ESP_LOGD(TAG, "Command ACK error: 0x%04X", ack);
@@ -294,11 +322,14 @@ namespace esphome
         this->last_cmd_ok_->publish_state(true);
 
       // parse query-params response before advancing the flow
-      if (buf[6] == 0x71 && len >= 22)
+      if (buf[ACK_OFF_CMD] == CMD_QUERY_PARAMS && len >= (int)ACK_QUERY_PARAMS_LEN)
       {
-        uint32_t max_gate = buf[10] | (buf[11] << 8) | (buf[12] << 16) | (buf[13] << 24);
-        uint32_t min_gate = buf[14] | (buf[15] << 8) | (buf[16] << 16) | (buf[17] << 24);
-        uint32_t none_delay = buf[18] | (buf[19] << 8) | (buf[20] << 16) | (buf[21] << 24);
+        uint32_t max_gate = buf[ACK_OFF_MAX_GATE] | (buf[ACK_OFF_MAX_GATE + 1] << 8) |
+                            (buf[ACK_OFF_MAX_GATE + 2] << 16) | (buf[ACK_OFF_MAX_GATE + 3] << 24);
+        uint32_t min_gate = buf[ACK_OFF_MIN_GATE] | (buf[ACK_OFF_MIN_GATE + 1] << 8) |
+                            (buf[ACK_OFF_MIN_GATE + 2] << 16) | (buf[ACK_OFF_MIN_GATE + 3] << 24);
+        uint32_t none_delay = buf[ACK_OFF_NONE_DELAY] | (buf[ACK_OFF_NONE_DELAY + 1] << 8) |
+                              (buf[ACK_OFF_NONE_DELAY + 2] << 16) | (buf[ACK_OFF_NONE_DELAY + 3] << 24);
         ESP_LOGD(TAG, "Params: max_gate=%u min_gate=%u none_delay=%us", max_gate, min_gate, none_delay);
         if (this->max_gate_ != nullptr)
           this->max_gate_->publish_state(max_gate);
