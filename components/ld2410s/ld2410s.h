@@ -46,7 +46,6 @@ namespace esphome
       void set_max_gate_number(LD2410SNumber *n) { this->max_gate_ = n; }
       void set_min_gate_number(LD2410SNumber *n) { this->min_gate_ = n; }
       void set_none_duration_number(LD2410SNumber *n) { this->none_duration_ = n; }
-      void set_off_delay(uint32_t ms) { this->off_delay_ms_ = ms; }
 
       // gate energy sensors — set individually by codegen
       void set_gate_energy_sensor(uint8_t gate, sensor::Sensor *s)
@@ -146,8 +145,6 @@ namespace esphome
       sensor::Sensor *distance_{nullptr};
       sensor::Sensor *gate_energy_[NUM_GATES]{};
 
-      uint32_t last_detection_ms_{0};
-      uint32_t off_delay_ms_{5000};
       bool target_state_{false};
 
       static const size_t RX_BUF_SIZE = 512; // must be a power of two

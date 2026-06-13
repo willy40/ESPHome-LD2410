@@ -41,34 +41,23 @@ namespace esphome
     {
       ESP_LOGCONFIG(TAG, "LD2410S setup done");
       // query parameters after 2s so the sensor UART is ready and loop() is running
-      this->set_timeout(500, [this]()
-                        { this->query_parameters(); });
+      // this->set_timeout(500, [this]()
+      //                   { this->query_parameters(); });
 
       // TEST: switch to standard output mode after a timeout
-      // this->set_timeout(100, [this]()
-      //                   { this->switch_output_mode(false); });
+      this->set_timeout(100, [this]()
+                        { this->switch_output_mode(true); });
     }
 
     void LD2410SComponent::loop()
     {
       while (this->available())
         this->readline_(this->read());
-
-      // OFF debounce: if no detection for off_delay_ms, publish OFF
-      if (this->target_state_ && this->has_target_ != nullptr)
-      {
-        if (millis() - this->last_detection_ms_ > this->off_delay_ms_)
-        {
-          this->target_state_ = false;
-          this->has_target_->publish_state(false);
-        }
-      }
     }
 
     void LD2410SComponent::dump_config()
     {
       ESP_LOGCONFIG(TAG, "HLK-LD2410S:");
-      ESP_LOGCONFIG(TAG, "  Off delay: %u ms", this->off_delay_ms_);
       LOG_BINARY_SENSOR("  ", "Has Target", this->has_target_);
       LOG_BINARY_SENSOR("  ", "Last Cmd OK", this->last_cmd_ok_);
       LOG_SENSOR("  ", "Distance", this->distance_);
@@ -79,17 +68,12 @@ namespace esphome
     // ---------------------------------------------------------------------------
     void LD2410SComponent::publish_presence_(bool detected)
     {
-      if (detected)
-      {
-        this->last_detection_ms_ = millis();
-        if (!this->target_state_)
-        {
-          this->target_state_ = true;
-          if (this->has_target_ != nullptr)
-            this->has_target_->publish_state(true);
-        }
-      }
-      // OFF is handled by the loop() timeout — never publish OFF here directly
+      if (this->target_state_ == detected)
+        return;
+
+      this->target_state_ = detected;
+      if (this->has_target_ != nullptr)
+        this->has_target_->publish_state(detected);
     }
 
     // ---------------------------------------------------------------------------
