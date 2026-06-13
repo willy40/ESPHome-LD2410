@@ -20,7 +20,6 @@ CONF_DISTANCE      = "distance"
 CONF_MAX_GATE      = "max_distance_gate"
 CONF_MIN_GATE      = "min_distance_gate"
 CONF_NONE_DURATION = "none_duration"
-CONF_OFF_DELAY     = "off_delay"
 CONF_GATE_ENERGY   = "gate_energy"
 
 NUM_GATES = 16
@@ -48,7 +47,6 @@ CONFIG_SCHEMA = (
     cv.Schema(
         {
             cv.GenerateID(): cv.declare_id(LD2410SComponent),
-            cv.Optional(CONF_OFF_DELAY, default="5s"): cv.positive_time_period_milliseconds,
             cv.Optional(CONF_HAS_TARGET): binary_sensor.binary_sensor_schema(
                 device_class=DEVICE_CLASS_OCCUPANCY,
             ),
@@ -78,8 +76,6 @@ async def to_code(config):
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
     await uart.register_uart_device(var, config)
-
-    cg.add(var.set_off_delay(config[CONF_OFF_DELAY]))
 
     if has_target_config := config.get(CONF_HAS_TARGET):
         sens = await binary_sensor.new_binary_sensor(has_target_config)
