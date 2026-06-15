@@ -38,7 +38,6 @@ uart:
 ld2410s:
   id: ld2410s_radar
   uart_id: uart_bus
-  off_delay: 5s
 
   has_target:
     name: "Has Target"
@@ -58,8 +57,7 @@ ld2410s:
   none_duration:
     name: "None Duration"
 
-  # gate_energy: requires standard mode (button "Switch to Standard Mode")
-  # entity_ids: sensor.<device>_gate_0 … sensor.<device>_gate_15
+  # read-only gate energy sensors
   gate_energy:
     - name: "Gate 0"
     - name: "Gate 1"
@@ -77,6 +75,25 @@ ld2410s:
     - name: "Gate 13"
     - name: "Gate 14"
     - name: "Gate 15"
+
+  # write sliders for saving gate energies
+  gate_energy_write:
+    - name: "Gate Write 0"
+    - name: "Gate Write 1"
+    - name: "Gate Write 2"
+    - name: "Gate Write 3"
+    - name: "Gate Write 4"
+    - name: "Gate Write 5"
+    - name: "Gate Write 6"
+    - name: "Gate Write 7"
+    - name: "Gate Write 8"
+    - name: "Gate Write 9"
+    - name: "Gate Write 10"
+    - name: "Gate Write 11"
+    - name: "Gate Write 12"
+    - name: "Gate Write 13"
+    - name: "Gate Write 14"
+    - name: "Gate Write 15"
 
 button:
   - platform: template

@@ -8,6 +8,15 @@ namespace esphome
 
     static const char *const TAG = "ld2410s";
 
+    static void build_save_gates_payload_(const uint16_t *energies, uint8_t *out)
+    {
+      out[0] = 0x01;
+      for (uint8_t i = 0; i < NUM_GATES; i++)
+      {
+        out[1 + i * 2] = static_cast<uint8_t>(energies[i] & 0xFF);
+        out[1 + i * 2 + 1] = static_cast<uint8_t>(energies[i] >> 8);
+      }
+    }
     // ---------------------------------------------------------------------------
     // LD2410SNumber::control
     // ---------------------------------------------------------------------------
@@ -16,22 +25,43 @@ namespace esphome
       this->publish_state(value);
       if (this->parent_ == nullptr)
         return;
-      float max_g = (this->parent_->max_gate_ != nullptr) ? this->parent_->max_gate_->state : 16;
+
+      float max_g = (this->parent_->max_gate_ != nullptr) ? this->parent_->max_gate_->state : NUM_GATES;
       float min_g = (this->parent_->min_gate_ != nullptr) ? this->parent_->min_gate_->state : 0;
       float none = (this->parent_->none_duration_ != nullptr) ? this->parent_->none_duration_->state : 10;
       switch (this->role_)
       {
       case 0:
         max_g = value;
+        this->parent_->set_distances_and_none_duration((int)max_g, (int)min_g, (int)none);
         break;
       case 1:
         min_g = value;
+        this->parent_->set_distances_and_none_duration((int)max_g, (int)min_g, (int)none);
         break;
       case 2:
         none = value;
+        this->parent_->set_distances_and_none_duration((int)max_g, (int)min_g, (int)none);
         break;
       }
-      this->parent_->set_distances_and_none_duration((int)max_g, (int)min_g, (int)none);
+    }
+
+    // ---------------------------------------------------------------------------
+    // LD2410SComponent — Save energy
+
+    void LD2410SComponent::set_gate_energies(const uint16_t energies[16])
+    {
+      if (this->cmd_flow_ != CmdFlow::IDLE)
+      {
+        ESP_LOGD(TAG, "set_gate_energies: command in progress, ignoring");
+        return;
+      }
+
+      memcpy(this->pending_gate_energies_, energies, sizeof(this->pending_gate_energies_));
+      this->cmd_flow_ = CmdFlow::SAVE_GATES_ENERGY;
+      this->cmd_step_ = 0;
+      uint8_t val[2] = {0x01, 0x00};
+      this->send_command_(0xFF, 0x00, val, 2);
     }
 
     // ---------------------------------------------------------------------------
@@ -70,7 +100,6 @@ namespace esphome
     {
       if (this->target_state_ == detected)
         return;
-
       this->target_state_ = detected;
       if (this->has_target_ != nullptr)
         this->has_target_->publish_state(detected);
@@ -404,6 +433,22 @@ namespace esphome
         {
           uint8_t val[6] = {0x00, 0x00, (uint8_t)(this->pending_standard_ ? 0x01 : 0x00), 0x00, 0x00, 0x00};
           this->send_command_(0x7A, 0x00, val, 6);
+        }
+        else if (this->cmd_step_ == 2)
+        {
+          this->send_command_(0xFE, 0x00, nullptr, 0);
+        }
+        else
+        {
+          this->cmd_flow_ = CmdFlow::IDLE;
+        }
+        break;
+      case CmdFlow::SAVE_GATES_ENERGY:
+        if (this->cmd_step_ == 1)
+        {
+          uint8_t val[1 + NUM_GATES * 2];
+          build_save_gates_payload_(this->pending_gate_energies_, val);
+          this->send_command_(0x72, 0x00, val, sizeof(val)); // wysyłamy komendę save gates
         }
         else if (this->cmd_step_ == 2)
         {

@@ -14,13 +14,14 @@ DEPENDENCIES = ["uart"]
 AUTO_LOAD = ["sensor", "binary_sensor", "number"]
 CODEOWNERS = ["@willy40"]
 
-CONF_HAS_TARGET    = "has_target"
-CONF_LAST_CMD_OK   = "last_command_success"
-CONF_DISTANCE      = "distance"
-CONF_MAX_GATE      = "max_distance_gate"
-CONF_MIN_GATE      = "min_distance_gate"
+CONF_HAS_TARGET = "has_target"
+CONF_LAST_CMD_OK = "last_command_success"
+CONF_DISTANCE = "distance"
+CONF_MAX_GATE = "max_distance_gate"
+CONF_MIN_GATE = "min_distance_gate"
 CONF_NONE_DURATION = "none_duration"
-CONF_GATE_ENERGY   = "gate_energy"
+CONF_GATE_ENERGY = "gate_energy"
+CONF_GATE_ENERGY_WRITE = "gate_energy_write"
 
 NUM_GATES = 16
 
@@ -43,6 +44,13 @@ GATE_ENERGY_SCHEMA = sensor.sensor_schema(
     icon="mdi:alpha-e-box",
 )
 
+GATE_ENERGY_WRITE_SCHEMA = number.number_schema(
+    LD2410SNumber,
+    min_value=0,
+    max_value=65535,
+    step=1,
+)
+
 CONFIG_SCHEMA = (
     cv.Schema(
         {
@@ -63,6 +71,10 @@ CONFIG_SCHEMA = (
             cv.Optional(CONF_NONE_DURATION): number.number_schema(LD2410SNumber),
             cv.Optional(CONF_GATE_ENERGY): cv.All(
                 cv.ensure_list(GATE_ENERGY_SCHEMA),
+                cv.Length(min=NUM_GATES, max=NUM_GATES),
+            ),
+            cv.Optional(CONF_GATE_ENERGY_WRITE): cv.All(
+                cv.ensure_list(GATE_ENERGY_WRITE_SCHEMA),
                 cv.Length(min=NUM_GATES, max=NUM_GATES),
             ),
         }
@@ -113,3 +125,12 @@ async def to_code(config):
     for i, gate_cfg in enumerate(config.get(CONF_GATE_ENERGY, [])):
         sens = await sensor.new_sensor(gate_cfg)
         cg.add(var.set_gate_energy_sensor(i, sens))
+
+    for i, gate_cfg in enumerate(config.get(CONF_GATE_ENERGY_WRITE, [])):
+        num = await number.new_number(gate_cfg, min_value=0, max_value=65535, step=1)
+        await cg.register_component(num, gate_cfg)
+        cg.add(num.set_parent(var))
+        cg.add(num.set_role(3))
+        cg.add(num.set_gate_index(i))
+        cg.add(var.set_gate_energy_set_number(i, num))
+
