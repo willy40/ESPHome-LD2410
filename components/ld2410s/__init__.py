@@ -122,7 +122,7 @@ async def to_code(config):
         cg.add(var.set_gate_energy_sensor(i, sens))
 
     for i, gate_cfg in enumerate(config.get(CONF_GATE_ENERGY_WRITE, [])):
-        num = await number.new_number(gate_cfg, min_value=0, max_value=65535)
+        num = await number.new_number(gate_cfg, min_value=0, max_value=65535, step=1)
         await cg.register_component(num, gate_cfg)
         cg.add(num.set_parent(var))
         cg.add(num.set_role(3))
