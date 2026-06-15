@@ -127,5 +127,5 @@ async def to_code(config):
         cg.add(num.set_parent(var))
         cg.add(num.set_role(3))
         cg.add(num.set_gate_index(i))
-        cg.add(var.set_gate_energy_set_number(i, num))
+        cg.add(var.set_gate_energy_write_number(i, num))
 
