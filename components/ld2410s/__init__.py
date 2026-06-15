@@ -83,7 +83,8 @@ async def to_code(config):
     await cg.register_component(var, config)
     await uart.register_uart_device(var, config)
 
-    # Importujemy wymagany enum dla trybu wyświetlania (suwak)
+    # Importujemy przestrzeń nazw dla enuma C++ w ESPHome
+    # Odpowiada to typowi esphome::number::NumberMode w C++
     from esphome.components.number import NumberMode
 
     if has_target_config := config.get(CONF_HAS_TARGET):
@@ -99,11 +100,13 @@ async def to_code(config):
         cg.add(var.set_distance_sensor(sens))
 
     if max_gate_config := config.get(CONF_MAX_GATE):
-        # Parametry min, max, step są WYMAGANE bezpośrednio w new_number()
         num = await number.new_number(max_gate_config, min_value=1, max_value=16, step=1)
         await cg.register_component(num, max_gate_config)
-        # Rejestrujemy encję i wymuszamy tryb SLIDER
-        await number.register_number(num, max_gate_config, min_value=1, max_value=16, step=1, mode=NumberMode.NUMBER_MODE_SLIDER)
+        await number.register_number(num, max_gate_config, min_value=1, max_value=16, step=1)
+        
+        # Wymuszenie trybu suwaka bezpośrednio w wygenerowanym kodzie C++
+        cg.add(num.set_mode(NumberMode.NUMBER_MODE_SLIDER))
+        
         cg.add(num.set_parent(var))
         cg.add(num.set_role(0))
         cg.add(var.set_max_gate_number(num))
@@ -111,7 +114,11 @@ async def to_code(config):
     if min_gate_config := config.get(CONF_MIN_GATE):
         num = await number.new_number(min_gate_config, min_value=0, max_value=16, step=1)
         await cg.register_component(num, min_gate_config)
-        await number.register_number(num, min_gate_config, min_value=0, max_value=16, step=1, mode=NumberMode.NUMBER_MODE_SLIDER)
+        await number.register_number(num, min_gate_config, min_value=0, max_value=16, step=1)
+        
+        # Wymuszenie trybu suwaka
+        cg.add(num.set_mode(NumberMode.NUMBER_MODE_SLIDER))
+        
         cg.add(num.set_parent(var))
         cg.add(num.set_role(1))
         cg.add(var.set_min_gate_number(num))
@@ -119,7 +126,11 @@ async def to_code(config):
     if none_dur_config := config.get(CONF_NONE_DURATION):
         num = await number.new_number(none_dur_config, min_value=10, max_value=120, step=1)
         await cg.register_component(num, none_dur_config)
-        await number.register_number(num, none_dur_config, min_value=10, max_value=120, step=1, mode=NumberMode.NUMBER_MODE_SLIDER)
+        await number.register_number(num, none_dur_config, min_value=10, max_value=120, step=1)
+        
+        # Wymuszenie trybu suwaka
+        cg.add(num.set_mode(NumberMode.NUMBER_MODE_SLIDER))
+        
         cg.add(num.set_parent(var))
         cg.add(num.set_role(2))
         cg.add(var.set_none_duration_number(num))
@@ -131,10 +142,12 @@ async def to_code(config):
     for i, gate_cfg in enumerate(config.get(CONF_GATE_ENERGY_WRITE, [])):
         num = await number.new_number(gate_cfg, min_value=0, max_value=10000, step=10)
         await cg.register_component(num, gate_cfg)
-        await number.register_number(num, gate_cfg, min_value=0, max_value=10000, step=10, mode=NumberMode.NUMBER_MODE_SLIDER)
+        await number.register_number(num, gate_cfg, min_value=0, max_value=10000, step=10)
+        
+        # Wymuszenie trybu suwaka dla pętli zapisu energii bramy
+        cg.add(num.set_mode(NumberMode.NUMBER_MODE_SLIDER))
+        
         cg.add(num.set_parent(var))
         cg.add(num.set_role(3))
         cg.add(num.set_gate_index(i))
         cg.add(var.set_gate_energy_write_number(i, num))
-
-
