@@ -127,5 +127,5 @@ async def to_code(config):
         cg.add(num.set_role(3))
         cg.add(num.set_gate_index(i))
         cg.add(var.set_gate_energy_write_number(i, num))
-        cg.add(num.set_mode(number.NumberMode.SLIDER))
+        cg.add(num.set_mode(number.NumberMode.NUMBER_MODE_SLIDER))
 
