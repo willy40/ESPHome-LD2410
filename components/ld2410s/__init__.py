@@ -106,7 +106,7 @@ async def to_code(config):
         
         cg.add(num.set_parent(var))
         cg.add(num.set_role(0))
-        var.add_max_gate_number = cg.add(var.set_max_gate_number(num))
+        cg.add(var.set_max_gate_number(num))  # <--- Poprawiona linijka (bez var.add_max_gate_number)
 
     if min_gate_config := config.get(CONF_MIN_GATE):
         min_gate_config = dict(min_gate_config)
