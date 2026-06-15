@@ -44,7 +44,10 @@ GATE_ENERGY_SCHEMA = sensor.sensor_schema(
     icon="mdi:alpha-e-box",
 )
 
-GATE_ENERGY_WRITE_SCHEMA = number.number_schema(LD2410SNumber)
+GATE_ENERGY_WRITE_SCHEMA = number.number_schema(
+    LD2410SNumber,
+    mode=number.NUMBER_MODE_SLIDER,
+)
 
 CONFIG_SCHEMA = (
     cv.Schema(
@@ -77,7 +80,6 @@ CONFIG_SCHEMA = (
     .extend(cv.polling_component_schema("15s"))
     .extend(uart.UART_DEVICE_SCHEMA)
 )
-
 
 async def to_code(config):
     var = cg.new_Pvariable(config[CONF_ID])
