@@ -96,9 +96,9 @@ async def to_code(config):
         cg.add(var.set_distance_sensor(sens))
 
     if max_gate_config := config.get(CONF_MAX_GATE):
-        # Wstrzykujemy tryb suwaka bezpośrednio do słownika konfiguracyjnego w Pythonie
+        # Kopiujemy słownik i wstrzykujemy poprawny wewnętrzny ENUM z Pythona
         max_gate_config = dict(max_gate_config)
-        max_gate_config["mode"] = "SLIDER"
+        max_gate_config["mode"] = number.NumberMode.SLIDER
         
         num = await number.new_number(max_gate_config, min_value=1, max_value=16, step=1)
         await cg.register_component(num, max_gate_config)
@@ -106,11 +106,11 @@ async def to_code(config):
         
         cg.add(num.set_parent(var))
         cg.add(num.set_role(0))
-        cg.add(var.set_max_gate_number(num))  # <--- Poprawiona linijka (bez var.add_max_gate_number)
+        cg.add(var.set_max_gate_number(num))
 
     if min_gate_config := config.get(CONF_MIN_GATE):
         min_gate_config = dict(min_gate_config)
-        min_gate_config["mode"] = "SLIDER"
+        min_gate_config["mode"] = number.NumberMode.SLIDER
         
         num = await number.new_number(min_gate_config, min_value=0, max_value=16, step=1)
         await cg.register_component(num, min_gate_config)
@@ -122,7 +122,7 @@ async def to_code(config):
 
     if none_dur_config := config.get(CONF_NONE_DURATION):
         none_dur_config = dict(none_dur_config)
-        none_dur_config["mode"] = "SLIDER"
+        none_dur_config["mode"] = number.NumberMode.SLIDER
         
         num = await number.new_number(none_dur_config, min_value=10, max_value=120, step=1)
         await cg.register_component(num, none_dur_config)
@@ -138,7 +138,7 @@ async def to_code(config):
 
     for i, gate_cfg in enumerate(config.get(CONF_GATE_ENERGY_WRITE, [])):
         gate_cfg = dict(gate_cfg)
-        gate_cfg["mode"] = "SLIDER"
+        gate_cfg["mode"] = number.NumberMode.SLIDER
         
         num = await number.new_number(gate_cfg, min_value=0, max_value=10000, step=10)
         await cg.register_component(num, gate_cfg)
