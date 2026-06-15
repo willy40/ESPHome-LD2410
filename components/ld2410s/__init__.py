@@ -101,7 +101,7 @@ async def to_code(config):
         await number.register_number(num, max_gate_config, min_value=1, max_value=16, step=1)
         
         # Wymuszenie trybu SLIDER poprzez bezpośrednie wstrzyknięcie surowego wyrażenia C++
-        cg.add(num.traits.set_mode(cg.raw_expression("number::NUMBER_MODE_SLIDER")))
+        cg.add(num.traits.set_mode(cg.RawExpression("number::NUMBER_MODE_SLIDER")))
         
         cg.add(num.set_parent(var))
         cg.add(num.set_role(0))
@@ -113,7 +113,7 @@ async def to_code(config):
         await number.register_number(num, min_gate_config, min_value=0, max_value=16, step=1)
         
         # Wymuszenie trybu SLIDER
-        cg.add(num.traits.set_mode(cg.raw_expression("number::NUMBER_MODE_SLIDER")))
+        cg.add(num.traits.set_mode(cg.RawExpression("number::NUMBER_MODE_SLIDER")))
         
         cg.add(num.set_parent(var))
         cg.add(num.set_role(1))
@@ -125,7 +125,7 @@ async def to_code(config):
         await number.register_number(num, none_dur_config, min_value=10, max_value=120, step=1)
         
         # Wymuszenie trybu SLIDER
-        cg.add(num.traits.set_mode(cg.raw_expression("number::NUMBER_MODE_SLIDER")))
+        cg.add(num.traits.set_mode(cg.RawExpression("number::NUMBER_MODE_SLIDER")))
         
         cg.add(num.set_parent(var))
         cg.add(num.set_role(2))
@@ -141,7 +141,7 @@ async def to_code(config):
         await number.register_number(num, gate_cfg, min_value=0, max_value=10000, step=10)
         
         # Wymuszenie trybu SLIDER w pętli zapisu energii
-        cg.add(num.traits.set_mode(cg.raw_expression("number::NUMBER_MODE_SLIDER")))
+        cg.add(num.traits.set_mode(cg.RawExpression("number::NUMBER_MODE_SLIDER")))
         
         cg.add(num.set_parent(var))
         cg.add(num.set_role(3))
